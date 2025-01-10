@@ -11,7 +11,7 @@ import { useDispatch } from 'react-redux';
 import { setToken } from '../../store/authSlice';
 
 interface VerifyOtpResponse {
-  isVerified: boolean;
+  verified: boolean;
   token?: string;  // Optional token field
 }
 
@@ -56,11 +56,11 @@ export default function OTPVerificationPage() {
         if (otpString.length === 6) {
           const verifyresponse = await verifyOtpService(email, otpString);
           const response: VerifyOtpResponse = verifyresponse.data;  // Use the defined interface
-          
-          if (response.token) {
+          console.log(response);
+          dispatch(setToken(response.token!));
+          if (response.verified) {
             router.push('/dashboard');
           } else {
-            dispatch(setToken(response.token!));  // Assumes 'token' will always be available if isVerified is false
             router.push('/otp-verification-failed');
           }
         } else {

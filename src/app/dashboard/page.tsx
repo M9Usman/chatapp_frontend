@@ -5,47 +5,92 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Menu, X, LogOut } from 'lucide-react'
+import { Send, Menu, X, LogOut, MessageSquare } from 'lucide-react'
 import { useSelector, useDispatch } from 'react-redux'
 import { useRouter } from 'next/navigation'
 import { clearToken } from '@/store/authSlice'
+import { logout, getAllUsers } from '../../service/api'
+import { useSocket } from '@/hooks/useSocket'
 
-
-const users = [
-  { id: 1, name: 'Alice Johnson', avatar: '/placeholder.svg?height=40&width=40' },
-  { id: 2, name: 'Bob Smith', avatar: '/placeholder.svg?height=40&width=40' },
-  { id: 3, name: 'Charlie Brown', avatar: '/placeholder.svg?height=40&width=40' },
-]
-
-const initialMessages = [
-  { id: 1, sender: 'Alice Johnson', content: 'Hey there! How are you?', timestamp: '10:00 AM' },
-  { id: 2, sender: 'You', content: "I'm doing great, thanks for asking! How about you?", timestamp: '10:05 AM' },
-  { id: 3, sender: 'Alice Johnson', content: "I'm good too. Just working on some projects. It's been a busy week with lots of meetings and deadlines, but I'm managing to stay on top of things. How's your week been going?", timestamp: '10:10 AM' },
-]
+type User = {
+  id: number
+  name: string
+  email: string
+}
 
 type Message = {
   id: number
-  sender: string
+  senderId: number
   content: string
   timestamp: string
 }
 
 export default function Dashboard() {
-  const [selectedUser, setSelectedUser] = useState(users[0])
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [users, setUsers] = useState<User[]>([])
   const [messageInput, setMessageInput] = useState('')
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [messages, setMessages] = useState<Message[]>([])
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const router = useRouter();
-  const dispatch = useDispatch();
-  const authState = useSelector((state: any) => state.auth);
+  const router = useRouter()
+  const dispatch = useDispatch()
+  const authState = useSelector((state: any) => state.auth)
+  const socket = useSocket(authState.user?.id)
 
   useEffect(() => {
-    console.log(authState.token);
-    if (!authState.token) {
-      router.push('/');  // Navigate to the welcome page if no valid token
+    if (!authState.token || !authState.user) {
+      router.push('/')
+    } else {
+      fetchUsers()
     }
-  }, [authState.token, router]);
+  }, [authState.token, authState.user, router])
+
+  useEffect(() => {
+    if (socket) {
+      socket.on('newMessage', (message: Message) => {
+        if (message.senderId === selectedUser?.id || message.senderId === authState.user?.id) {
+          setMessages((prevMessages) => [...prevMessages, message])
+        }
+      })
+
+      socket.on('error', (error: any) => {
+        console.error('Socket error:', error)
+      })
+
+      return () => {
+        socket.off('newMessage')
+        socket.off('error')
+      }
+    }
+  }, [socket, selectedUser, authState.user])
+
+  const fetchUsers = async () => {
+    try {
+      const fetchedUsers = await getAllUsers()
+      setUsers(fetchedUsers.filter((user: User) => user.id !== authState.user?.id))
+      setIsLoading(false)
+    } catch (error) {
+      console.error('Error fetching users:', error)
+      setIsLoading(false)
+    }
+  }
+
+  const fetchMessages = async (userId:any) => {
+    if (socket && authState.user) {
+      socket.emit('fetchMessages', { userId: authState.user.id, chatWith: userId });
+      socket.on('messageHistory', (fetchedMessages) => {
+        setMessages(fetchedMessages);
+      });
+    }
+  };
+  
+
+  useEffect(() => {
+    if (selectedUser) {
+      fetchMessages(selectedUser.id)
+    }
+  }, [selectedUser])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -55,14 +100,13 @@ export default function Dashboard() {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault()
-    if (messageInput.trim()) {
-      const newMessage: Message = {
-        id: messages.length + 1,
-        sender: 'You',
+    if (messageInput.trim() && selectedUser && socket && authState.user) {
+      const newMessage = {
+        senderId: authState.user.id,
+        receiverId: selectedUser.id,
         content: messageInput.trim(),
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
-      setMessages([...messages, newMessage])
+      socket.emit('sendMessage', newMessage)
       setMessageInput('')
     }
   }
@@ -71,32 +115,39 @@ export default function Dashboard() {
     setIsSidebarOpen(!isSidebarOpen)
   }
 
-  const handleLogout = () => {
-    dispatch(clearToken());
-    sessionStorage.clear();
-    router.push('/');
+  const handleLogout = async () => {
+    try {
+      if (authState.user) {
+        await logout(authState.user.id)
+      }
+      dispatch(clearToken())
+      sessionStorage.clear()
+      router.push('/')
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-screen bg-gray-950 text-white">Loading...</div>
   }
 
   return (
     <div className="flex h-screen bg-gray-950 text-white">
-      {/* Left sidebar */}
       <div className={`${isSidebarOpen ? 'block' : 'hidden'} md:block w-full md:w-64 flex-shrink-0 flex flex-col border-r border-gray-800 absolute md:relative z-10 bg-gray-950`}>
-        {/* User detail card */}
         <Card className="m-4 bg-gray-900 text-white">
           <CardContent className="p-4 flex items-center space-x-4">
             <div>
-              <h2 className="font-semibold">Your Name</h2>
-              <p className="text-sm text-gray-400">your.email@example.com</p>
+              <h2 className="font-semibold">{authState.user?.name}</h2>
+              <p className="text-sm text-gray-400">{authState.user?.email}</p>
             </div>
           </CardContent>
         </Card>
-        
-        {/* User list */}
         <ScrollArea className="flex-grow">
-          {users.map(user => (
+          {users.map((user) => (
             <div
               key={user.id}
-              className={`flex items-center space-x-4 p-4 hover:bg-gray-800 cursor-pointer ${selectedUser.id === user.id ? 'bg-gray-800' : ''}`}
+              className={`flex items-center space-x-4 p-4 hover:bg-gray-800 cursor-pointer ${selectedUser?.id === user.id ? 'bg-gray-800' : ''}`}
               onClick={() => {
                 setSelectedUser(user)
                 setIsSidebarOpen(false)
@@ -108,8 +159,6 @@ export default function Dashboard() {
             </div>
           ))}
         </ScrollArea>
-
-        {/* Logout button */}
         <Button
           variant="ghost"
           className="m-4 w-auto justify-start text-red-500 hover:text-red-400 hover:bg-gray-800"
@@ -119,48 +168,49 @@ export default function Dashboard() {
           Logout
         </Button>
       </div>
-
-      {/* Right chat area */}
       <div className="flex-grow flex flex-col w-full">
-        {/* Chat header */}
         <div className="p-4 border-b border-gray-800 flex items-center">
           <Button variant="ghost" size="icon" className="md:hidden mr-2" onClick={toggleSidebar}>
             {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
-          <h2 className="font-semibold">{selectedUser.name}</h2>
+          <h2 className="font-semibold">{selectedUser ? selectedUser.name : 'Select a user to chat'}</h2>
         </div>
-
-        {/* Messages */}
         <ScrollArea className="flex-grow p-4">
-          <div className="space-y-4">
-            {messages.map(message => (
-              <div key={message.id} className={`flex ${message.sender === 'You' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`inline-block p-3 rounded-lg ${message.sender === 'You' ? 'bg-blue-600' : 'bg-gray-800'} max-w-[70%]`}>
-                  <p className="break-words whitespace-pre-wrap">{message.content}</p>
-                  <p className="text-xs text-gray-400 mt-1">{message.timestamp}</p>
+          {selectedUser ? (
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <div key={message.id} className={`flex ${message.senderId === authState.user?.id ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`inline-block p-3 rounded-lg ${message.senderId === authState.user?.id ? 'bg-blue-600' : 'bg-gray-800'} max-w-[70%]`}>
+                    <p className="break-words whitespace-pre-wrap">{message.content}</p>
+                    <p className="text-xs text-gray-400 mt-1">{new Date(message.timestamp).toLocaleTimeString()}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full">
+              <MessageSquare className="w-16 h-16 text-gray-600 mb-4" />
+              <p className="text-gray-500 text-lg">Select a user to start chatting</p>
+            </div>
+          )}
         </ScrollArea>
-
-        {/* Message input */}
-        <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex space-x-2">
-          <Input
-            type="text"
-            placeholder="Type a message..."
-            value={messageInput}
-            onChange={(e) => setMessageInput(e.target.value)}
-            className="flex-grow bg-gray-800 border-gray-700 text-white placeholder-gray-500"
-          />
-          <Button type="submit">
-            <Send className="h-5 w-5" />
-            <span className="sr-only">Send message</span>
-          </Button>
-        </form>
+        {selectedUser && (
+          <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex space-x-2">
+            <Input
+              type="text"
+              placeholder="Type a message..."
+              value={messageInput}
+              onChange={(e) => setMessageInput(e.target.value)}
+              className="flex-grow bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+            />
+            <Button type="submit">
+              <Send className="h-5 w-5" />
+              <span className="sr-only">Send message</span>
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   )
 }
-

@@ -5,67 +5,75 @@ import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { loginService } from 'src/service/login';
 import { toast } from 'react-toastify';
 import { useDispatch } from 'react-redux';
+import { loginService } from 'src/service/login';
+import { resendOtpService } from 'src/service/resendOtp';
 import { setToken } from '../store/authSlice';
-
-interface Response {
-  isVerified: boolean;
-  message: string;
-  token?: string; // Optional token
-}
-
 
 export default function WelcomePage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [isFirstTime, setIsFirstTime] = useState(true); // Track user type
+  const [isFirstTime, setIsFirstTime] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const dispatch = useDispatch();
 
-  const isValidEmail = (email: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const handleJoin = async () => {
+  const handleAction = async () => {
     if (!isValidEmail(email)) {
       toast.error('Please enter a valid email address.');
       return;
     }
 
     setIsLoading(true);
-    const toastId = toast.loading('Sending OTP, please wait...');
+    const toastId = toast.loading('Processing, please wait...');
 
     try {
-      const axiosResponse = await loginService(email, isFirstTime ? name : '');
-      const response: Response = axiosResponse.data;
+      if (isFirstTime) {
+        const axiosResponse = await loginService(email, name);
+        const response = axiosResponse.data;
 
-      toast.update(toastId, {
-        render: 'OTP sent successfully! Check your email.',
-        type: 'success',
-        isLoading: false,
-        autoClose: 3000,
-      });
+        toast.update(toastId, {
+          render: 'OTP sent successfully! Check your email.',
+          type: 'success',
+          isLoading: false,
+          autoClose: 3000,
+        });
 
-      sessionStorage.setItem('user-email', email);
+        sessionStorage.setItem('user-email', email);
 
-      if (response.isVerified) {
-        // Safely handle undefined token
-        dispatch(setToken(response.token!));  // using non-null assertion operator (!)
-        setTimeout(() => {
+        if (response.isVerified) {
+          dispatch(setToken(response.token!));
           router.push('/dashboard');
-        }, 500);
-      } else {
-        setTimeout(() => {
+        } else {
           router.push('/otp-verification');
-        }, 500);
+        }
+      } else {
+        const axiosResponse = await resendOtpService(email);
+        const response = axiosResponse.data;
+
+        if (response.isVerified) {
+          dispatch(setToken(response.token!));
+          router.push('/dashboard');
+        } else {
+          toast.update(toastId, {
+            render: 'OTP resent successfully! Check your email.',
+            type: 'success',
+            isLoading: false,
+            autoClose: 3000,
+          });
+
+          sessionStorage.setItem('user-email', email);
+          router.push('/otp-verification');
+        }
       }
     } catch (error) {
-      console.error('Signup Error:', error);
+      console.error('Error:', error);
 
       toast.update(toastId, {
-        render: 'Failed to send OTP. Please try again.',
+        render: 'An error occurred. Please try again.',
         type: 'error',
         isLoading: false,
         autoClose: 3000,
@@ -85,11 +93,10 @@ export default function WelcomePage() {
       <Card className="w-[350px] bg-black/10 backdrop-blur-md border-gray-100/20 z-10">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center text-white">Welcome to ChatApp</CardTitle>
-          <CardContent className="text-sm text-gray-300 text-center">"Welcome to ChatApp" is a friendly greeting that you might see when you first open a chat application. Think of it like entering a café where people gather to talk.
-          ChatApp is designed for online communication, allowing users to connect and chat with each other. The phrase invites both new users, who might be joining for the first time, and returning users, who are already familiar with the platform.
+          <CardContent className="text-sm text-gray-300 text-center">
+            "Welcome to ChatApp" is a friendly greeting when you first open a chat application. Think of it like entering a café where people gather to talk.
           </CardContent>
           <CardDescription className="text-center text-white">Join the conversation!</CardDescription>
-
         </CardHeader>
         <CardContent>
           <div className="flex space-x-4 justify-center mb-4">
@@ -128,12 +135,11 @@ export default function WelcomePage() {
         </CardContent>
         <CardFooter className="flex justify-center">
           <Button
-            onClick={handleJoin}
+            onClick={handleAction}
             className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
-            disabled={(!isFirstTime && !email.trim()) || (isFirstTime && (!name.trim() || !email.trim())) || isLoading}
-            aria-disabled={(!isFirstTime && !email.trim()) || (isFirstTime && (!name.trim() || !email.trim())) || isLoading}
+            disabled={!email.trim() || (isFirstTime && !name.trim()) || isLoading}
           >
-            {isLoading ? 'Sending...' : 'Join ChatApp'}
+            {isLoading ? 'Processing...' : isFirstTime ? 'Join ChatApp' : 'Resend OTP'}
           </Button>
         </CardFooter>
       </Card>
