@@ -5,7 +5,11 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Menu, X } from 'lucide-react'
+import { Send, Menu, X, LogOut } from 'lucide-react'
+import { useSelector, useDispatch } from 'react-redux'
+import { useRouter } from 'next/navigation'
+import { clearToken } from '@/store/authSlice'
+
 
 const users = [
   { id: 1, name: 'Alice Johnson', avatar: '/placeholder.svg?height=40&width=40' },
@@ -13,7 +17,7 @@ const users = [
   { id: 3, name: 'Charlie Brown', avatar: '/placeholder.svg?height=40&width=40' },
 ]
 
-const initialMessages: Message[] = [
+const initialMessages = [
   { id: 1, sender: 'Alice Johnson', content: 'Hey there! How are you?', timestamp: '10:00 AM' },
   { id: 2, sender: 'You', content: "I'm doing great, thanks for asking! How about you?", timestamp: '10:05 AM' },
   { id: 3, sender: 'Alice Johnson', content: "I'm good too. Just working on some projects. It's been a busy week with lots of meetings and deadlines, but I'm managing to stay on top of things. How's your week been going?", timestamp: '10:10 AM' },
@@ -32,6 +36,16 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const router = useRouter();
+  const dispatch = useDispatch();
+  const authState = useSelector((state: any) => state.auth);
+
+  useEffect(() => {
+    console.log(authState.token);
+    if (!authState.token) {
+      router.push('/');  // Navigate to the welcome page if no valid token
+    }
+  }, [authState.token, router]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -55,6 +69,12 @@ export default function Dashboard() {
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen)
+  }
+
+  const handleLogout = () => {
+    dispatch(clearToken());
+    sessionStorage.clear();
+    router.push('/');
   }
 
   return (
@@ -88,6 +108,16 @@ export default function Dashboard() {
             </div>
           ))}
         </ScrollArea>
+
+        {/* Logout button */}
+        <Button
+          variant="ghost"
+          className="m-4 w-auto justify-start text-red-500 hover:text-red-400 hover:bg-gray-800"
+          onClick={handleLogout}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Logout
+        </Button>
       </div>
 
       {/* Right chat area */}
