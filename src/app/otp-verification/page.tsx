@@ -58,7 +58,6 @@ export default function OTPVerificationPage() {
           const response: VerifyOtpResponse = verifyresponse.data;  // Use the defined interface
           console.log(response);
           dispatch(setToken(response.token!));
-    
           if (response.verified) {
             router.push('/dashboard');
           } else {

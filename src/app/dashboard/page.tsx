@@ -42,7 +42,9 @@ export default function Dashboard() {
   const socket = useSocket(authState.user?.userId);
 
   useEffect(() => {
-    console.log(authState.token);
+    // let user = sessionStorage.getItem('user');
+    // console.log('Token in Session : ',sessionStorage.getItem('token'));
+    // console.log('User in Session : ',user.userId);
     if (!authState.token) {
       router.push('/');
     } else {
@@ -87,7 +89,7 @@ export default function Dashboard() {
   const handleLogout = async () => {
     try {
       if (authState.user) {
-        await logout(authState.user.userId);
+        await logout();
       }
       dispatch(clearToken());
       sessionStorage.clear();
@@ -130,7 +132,7 @@ export default function Dashboard() {
         return;
       }
 
-      const responseUserChat = await fetchUserMessagesServices(userId, otherUserId);
+      const responseUserChat = await fetchUserMessagesServices(otherUserId);
       if (responseUserChat && responseUserChat.data && responseUserChat.data.messages) {
         setMessages(responseUserChat.data.messages);
         scrollToBottom();

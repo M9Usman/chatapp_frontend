@@ -21,10 +21,9 @@ api.interceptors.request.use((config) => {
 });
 
 // Logout function that sends a POST request to '/logout'
-export const logout = async (userId: number) => {
-  console.log('Logout Logic',userId);
+export const logout = async () => {
   try {
-    const response = await api.post('/logout', { userId });
+    const response = await api.post('/logout');
     return response.data;
   } catch (error:any) {
     console.error('Logout error:', {
@@ -32,7 +31,6 @@ export const logout = async (userId: number) => {
       requestConfig: {
         method: 'POST',
         url: '/logout',
-        data: { userId },
         headers: api.defaults.headers,
       },
       responseData: error.response ? error.response.data : null,

@@ -1,13 +1,28 @@
 import { configureStore } from '@reduxjs/toolkit';
-import authReducer from './authSlice';  // Adjust the path to your authSlice
+import { persistStore, persistReducer } from 'redux-persist';
+import storage from 'redux-persist/lib/storage'; // Defaults to localStorage for web
+import authReducer from './authSlice'; // Adjust the path to your authSlice
+
+const persistConfig = {
+  key: 'root',
+  storage,
+  whitelist: ['auth'], // Persist only the auth slice
+};
+
+const persistedReducer = persistReducer(persistConfig, authReducer);
 
 export const store = configureStore({
   reducer: {
-    auth: authReducer,  // Add the auth reducer here
+    auth: persistedReducer,
   },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: false, // Required for redux-persist
+    }),
 });
+
+export const persistor = persistStore(store);
 
 // Infer the `RootState` and `AppDispatch` types from the store itself
 export type RootState = ReturnType<typeof store.getState>;
-// Inferred type: {auth: AuthState}
 export type AppDispatch = typeof store.dispatch;

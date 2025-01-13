@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { store } from '../store/store'; // Adjust the path to your store file
 
-export const fetchUserMessagesServices = async (userId: number, otherUserId: number) => {
+export const fetchUserMessagesServices = async ( otherUserId: number) => {
 //   console.log('In fetching Users Chat');
     try {
     // Retrieve the token from Redux store
@@ -16,7 +16,7 @@ export const fetchUserMessagesServices = async (userId: number, otherUserId: num
 
     // Make the request with the token in the headers
     const response = await axios.get(
-        `http://localhost:4000/chat/messages/${userId}/${otherUserId}`,
+        `http://localhost:4000/chat/messages/${otherUserId}`,
         {
           headers: {
             Authorization: `Bearer ${token}`, // Ensure the token is included here
