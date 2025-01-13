@@ -11,18 +11,20 @@ import { useRouter } from 'next/navigation'
 import { clearToken } from '@/store/authSlice'
 import { logout, getAllUsers } from '../../service/api'
 import { useSocket } from '@/hooks/useSocket'
+import { fetchUserMessagesServices } from '@/service/fetchUsersMessages'
 
 type User = {
   id: number
   name: string
   email: string
 }
-
 type Message = {
-  id: number
-  senderId: number
-  content: string
-  timestamp: string
+  id: number;
+  senderId: number;
+  content: string;
+  timestamp: string;  // Assuming `timestamp` is the correct property name
+  createdAt: string;   // Add this if it's missing
+  updatedAt: string;
 }
 
 export default function Dashboard() {
@@ -36,9 +38,10 @@ export default function Dashboard() {
   const router = useRouter()
   const dispatch = useDispatch()
   const authState = useSelector((state: any) => state.auth)
-  const socket = useSocket(authState.user?.id)
+  const socket = useSocket(authState.user?.userId)
 
   useEffect(() => {
+    // console.log('Loged in user : ',authState.user?.userId);
     if (!authState.token || !authState.user) {
       router.push('/')
     } else {
@@ -49,7 +52,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (socket) {
       socket.on('newMessage', (message: Message) => {
-        if (message.senderId === selectedUser?.id || message.senderId === authState.user?.id) {
+        if (message.senderId === selectedUser?.id || message.senderId === authState.user?.userId) {
           setMessages((prevMessages) => [...prevMessages, message])
         }
       })
@@ -68,29 +71,30 @@ export default function Dashboard() {
   const fetchUsers = async () => {
     try {
       const fetchedUsers = await getAllUsers()
-      setUsers(fetchedUsers.filter((user: User) => user.id !== authState.user?.id))
+      setUsers(fetchedUsers.filter((user: User) => user.id !== authState.user?.userId))
       setIsLoading(false)
     } catch (error) {
       console.error('Error fetching users:', error)
       setIsLoading(false)
     }
+    
   }
 
-  const fetchMessages = async (userId:any) => {
-    if (socket && authState.user) {
-      socket.emit('fetchMessages', { userId: authState.user.id, chatWith: userId });
-      socket.on('messageHistory', (fetchedMessages) => {
-        setMessages(fetchedMessages);
-      });
-    }
-  };
+  // const fetchMessages = async (userId:any) => {
+  //   if (socket && authState.user) {
+  //     socket.emit('fetchMessages', { userId: authState.user.id, chatWith: userId });
+  //     socket.on('messageHistory', (fetchedMessages) => {
+  //       setMessages(fetchedMessages);
+  //     });
+  //   }
+  // };
   
 
-  useEffect(() => {
-    if (selectedUser) {
-      fetchMessages(selectedUser.id)
-    }
-  }, [selectedUser])
+  // useEffect(() => {
+  //   if (selectedUser) {
+  //     fetchMessages(selectedUser.id)
+  //   }
+  // }, [selectedUser])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -128,10 +132,46 @@ export default function Dashboard() {
     }
   }
 
+  const selectUserChat = async (user: any) => {
+    try {
+      // Fetching User Id
+      const userId = authState.user?.userId;
+      const otherUserId = user.id;
+  
+      if (!userId || !otherUserId) {
+        console.error('User IDs are missing!');
+        return;
+      }
+  
+      // Fetch Chat between Users using the controller's fetchMessagesServices
+      const responseUserChat = await fetchUserMessagesServices(userId, otherUserId);
+  
+      if (responseUserChat && responseUserChat.data && responseUserChat.data.messages) {
+        const fetchedMessages = responseUserChat.data.messages;
+  
+        // Clear messages before setting new ones
+        setMessages([]);
+  
+        // Ensure messages are sorted by most recent
+        const sortedMessages = fetchedMessages.sort((a:any, b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  
+        setMessages(sortedMessages);
+        scrollToBottom();
+      } else {
+        // If no messages exist, clear the messages area
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Error fetching user chat:', error);
+    }
+  };
+  
+  
+  
+
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen bg-gray-950 text-white">Loading...</div>
   }
-
   return (
     <div className="flex h-screen bg-gray-950 text-white">
       <div className={`${isSidebarOpen ? 'block' : 'hidden'} md:block w-full md:w-64 flex-shrink-0 flex flex-col border-r border-gray-800 absolute md:relative z-10 bg-gray-950`}>
@@ -144,13 +184,15 @@ export default function Dashboard() {
           </CardContent>
         </Card>
         <ScrollArea className="flex-grow">
-          {users.map((user) => (
+        {users
+          .map((user) => (
             <div
               key={user.id}
               className={`flex items-center space-x-4 p-4 hover:bg-gray-800 cursor-pointer ${selectedUser?.id === user.id ? 'bg-gray-800' : ''}`}
               onClick={() => {
                 setSelectedUser(user)
                 setIsSidebarOpen(false)
+                selectUserChat(user);
               }}
             >
               <div className="flex-grow">
@@ -158,6 +200,8 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+
+
         </ScrollArea>
         <Button
           variant="ghost"
@@ -176,41 +220,49 @@ export default function Dashboard() {
           <h2 className="font-semibold">{selectedUser ? selectedUser.name : 'Select a user to chat'}</h2>
         </div>
         <ScrollArea className="flex-grow p-4">
-          {selectedUser ? (
-            <div className="space-y-4">
-              {messages.map((message) => (
-                <div key={message.id} className={`flex ${message.senderId === authState.user?.id ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`inline-block p-3 rounded-lg ${message.senderId === authState.user?.id ? 'bg-blue-600' : 'bg-gray-800'} max-w-[70%]`}>
-                    <p className="break-words whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs text-gray-400 mt-1">{new Date(message.timestamp).toLocaleTimeString()}</p>
-                  </div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          ) : (
+        {selectedUser ? (
+        <div className="space-y-4">
+          {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
               <MessageSquare className="w-16 h-16 text-gray-600 mb-4" />
-              <p className="text-gray-500 text-lg">Select a user to start chatting</p>
+              <p className="text-gray-500 text-lg">No messages with this user yet</p>
             </div>
+          ) : (
+            messages.map((message) => (
+              <div key={message.id} className={`flex ${message.senderId === authState.user?.id ? 'justify-end' : 'justify-start'}`}>
+                <div className={`inline-block p-3 rounded-lg ${message.senderId === authState.user?.id ? 'bg-blue-600' : 'bg-gray-800'} max-w-[70%]`}>
+                  <p className="break-words whitespace-pre-wrap">{message.content}</p>
+                  <p className="text-xs text-gray-400 mt-1">{new Date(message.createdAt).toLocaleTimeString()}</p>
+                </div>
+              </div>
+            ))
           )}
+          <div ref={messagesEndRef} />
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full">
+          <MessageSquare className="w-16 h-16 text-gray-600 mb-4" />
+          <p className="text-gray-500 text-lg">Select a user to start chatting</p>
+        </div>
+      )}
+
         </ScrollArea>
         {selectedUser && (
-          <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex space-x-2">
-            <Input
-              type="text"
-              placeholder="Type a message..."
-              value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
-              className="flex-grow bg-gray-800 border-gray-700 text-white placeholder-gray-500"
-            />
-            <Button type="submit">
-              <Send className="h-5 w-5" />
-              <span className="sr-only">Send message</span>
-            </Button>
-          </form>
-        )}
-      </div>
-    </div>
-  )
-}
+                  <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex space-x-2">
+                    <Input
+                      type="text"
+                      placeholder="Type a message..."
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      className="flex-grow bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                    />
+                    <Button type="submit">
+                      <Send className="h-5 w-5" />
+                      <span className="sr-only">Send message</span>
+                    </Button>
+                  </form>
+                )}
+              </div>
+            </div>
+          )
+        }
