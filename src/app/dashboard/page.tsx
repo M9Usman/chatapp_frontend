@@ -82,7 +82,7 @@ export default function Dashboard() {
 
   // const fetchMessages = async (userId:any) => {
   //   if (socket && authState.user) {
-  //     socket.emit('fetchMessages', { userId: authState.user.id, chatWith: userId });
+  //     socket.emit('fetchMessages', { userId: authState.user.userId, chatWith: userId });
   //     socket.on('messageHistory', (fetchedMessages) => {
   //       setMessages(fetchedMessages);
   //     });
@@ -106,7 +106,7 @@ export default function Dashboard() {
     e.preventDefault()
     if (messageInput.trim() && selectedUser && socket && authState.user) {
       const newMessage = {
-        senderId: authState.user.id,
+        senderId: authState.user.userId,
         receiverId: selectedUser.id,
         content: messageInput.trim(),
       }
@@ -122,7 +122,7 @@ export default function Dashboard() {
   const handleLogout = async () => {
     try {
       if (authState.user) {
-        await logout(authState.user.id)
+        await logout(authState.user.userId)
       }
       dispatch(clearToken())
       sessionStorage.clear()
