@@ -45,10 +45,10 @@ export default function Dashboard() {
     // let user = sessionStorage.getItem('user');
     // console.log('Token in Session : ',sessionStorage.getItem('token'));
     // console.log('User in Session : ',user.userId);
-    if (!authState.token) {
-      router.push('/');
-    } else {
+    if (authState.token) {
       fetchUsers();
+    } else {
+      router.push('/');
     }
   }, [authState.token, authState.user, router]);
 

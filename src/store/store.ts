@@ -6,7 +6,6 @@ import authReducer from './authSlice'; // Adjust the path to your authSlice
 const persistConfig = {
   key: 'root',
   storage,
-  whitelist: ['auth'], // Persist only the auth slice
 };
 
 const persistedReducer = persistReducer(persistConfig, authReducer);
