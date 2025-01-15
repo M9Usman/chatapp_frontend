@@ -23,7 +23,7 @@ export const fetchUserMessagesServices = async ( otherUserId: number) => {
           },
         }
       );
-
+    console.log('In Service Message Response: ',response);  
     return response;
   } catch (error) {
     console.error('Getting Message Error:', error);

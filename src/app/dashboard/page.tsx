@@ -30,7 +30,7 @@ type Message = {
   timestamp: string;
   createdAt: string;
   updatedAt: string;
-  file?: File | null;
+  image?: object | null;
 };
 interface ChatData {
   chatId: number;
@@ -72,7 +72,7 @@ export default function Dashboard() {
       socket.on('newMessage', (message: Message) => {
         if (message.senderId === selectedUser?.id || message.senderId === authState.user?.userId) {
           setMessages((prevMessages) => [...prevMessages, message]);
-          console.log('newMessage');
+          console.log('newMessage : ',message);
         }
       });
   
@@ -141,28 +141,72 @@ export default function Dashboard() {
 
   useEffect(scrollToBottom, [messages]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  // const handleSendMessage = (e: React.FormEvent) => {
+  //   e.preventDefault();
+
+  //   if ((messageInput.trim() || selectedFile) && selectedUser && socket && authState.user) {
+  //     const newMessage = {
+  //       senderId: authState.user.userId,
+  //       receiverId: selectedUser.id,
+  //       content: messageInput.trim(),
+  //       file: selectedFile,
+  //       createdAt: new Date().toISOString(),
+  //     };
+
+  //     socket.emit('sendMessage', newMessage);
+
+  //   setTimeout(() => {
+  //     setMessages((prevMessages:any) => [...prevMessages, newMessage]);
+  //   }, 50);
+
+  //     setMessageInput('');
+  //     setSelectedFile(null);
+  //   }
+  // };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if ((messageInput.trim() || selectedFile) && selectedUser && socket && authState.user) {
-      const newMessage = {
-        senderId: authState.user.userId,
-        receiverId: selectedUser.id,
-        content: messageInput.trim(),
-        file: selectedFile,
-        createdAt: new Date().toISOString(),
-      };
+        let base64Image: string | null = null;
 
-      socket.emit('sendMessage', newMessage);
+        if (selectedFile) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                base64Image = reader.result?.toString().split(',')[1] || null;
+                // console.log('base64Image : ',base64Image);
+                const newMessage = {
+                    senderId: authState.user.userId,
+                    receiverId: selectedUser.id,
+                    content: messageInput.trim(),
+                    image: base64Image,
+                    createdAt: new Date().toISOString(),
+                };
 
-    setTimeout(() => {
-      setMessages((prevMessages:any) => [...prevMessages, newMessage]);
-    }, 50);
+                socket.emit('sendMessage', newMessage);
+                console.log('NEW MESSAGE: ',newMessage)
+                setMessages((prevMessages:any) => [...prevMessages, newMessage]);
+                setMessageInput('');
+                setSelectedFile(null);
+            };
+            reader.readAsDataURL(selectedFile);
+        } else {
+            const newMessage = {
+                senderId: authState.user.userId,
+                receiverId: selectedUser.id,
+                content: messageInput.trim(),
+                image: base64Image,
+                createdAt: new Date().toISOString(),
+            };
 
-      setMessageInput('');
-      setSelectedFile(null);
+            socket.emit('sendMessage', newMessage);
+
+            setMessages((prevMessages:any) => [...prevMessages, newMessage]);
+            setMessageInput('');
+        }
     }
-  };
+};
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessageInput(e.target.value);
@@ -182,7 +226,7 @@ export default function Dashboard() {
             receiverId: selectedUser?.id,
           });
           console.log('Start typing socket hit');
-        }, 500); // 0.5 seconds
+        }, 300); // 0.3 seconds
       } else {
         console.log('Stoping the typing!');
         socket!.emit('typing', {
@@ -203,7 +247,6 @@ export default function Dashboard() {
     console.log('Current typing users:', typingUsers);
   }, [typingUsers]);
   
-  
   const selectUserChat = async (user: User) => {
     try {
       const otherUserId = user.id;
@@ -216,29 +259,50 @@ export default function Dashboard() {
       const responseUserChat = await fetchUserMessagesServices(otherUserId);
       const data = responseUserChat.data;
       
-        if (responseUserChat?.data&&responseUserChat?.data?.messages?.chatId&&responseUserChat?.data?.messages&&responseUserChat?.data?.messages?.messages) {
-          console.log('It has chat Id!');
-          setChatId(data.messages.chatId);
-          setMessages(responseUserChat.data.messages.messages);
-          console.log('chatId : ',chatId);
-          scrollToBottom();
-        } else {
-          setChatId(null);
-          console.log('no Chat Id');
-          setMessages([]);
-        }  
+      if (responseUserChat?.data && responseUserChat?.data?.messages?.chatId && responseUserChat?.data?.messages && responseUserChat?.data?.messages?.messages) {
+        console.log('It has chat Id!');
+        setChatId(data.messages.chatId);
+        const newMessagesArray = data.messages.messages;
+        setMessages(newMessagesArray);
+        
+        newMessagesArray.map((message:any) => {
+          if (message.image) {
+            console.log('Image after Reloading : ',message.image,' Image after Reloading Type : ',typeof message.image );
+          }
+          return message;
+        });
+        
+        scrollToBottom();
+      } else {
+        setChatId(null);
+        console.log('no Chat Id');
+        setMessages([]);
+      }  
     } catch (error) {
       console.error('Error fetching user chat:', error);
     }
-  };
+};
+
+  useEffect(()=>{
+    console.log('Messages Updated : ',messages);
+  },[messages])
+  
   const handleEmojiSelect = (emoji: { native: string }) => {
     setMessageInput((prev) => prev + emoji.native);
   };
+  
+  function convertBytesToBase64(imageBytes: Uint8Array): string {
+    return Buffer.from(imageBytes).toString('base64');
+  }
+
   
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen bg-gray-950 text-white">Loading...</div>;
   }
 
+  const handleCancelFile=()=>{
+    setSelectedFile(null);
+  }
   return (
     <div className="flex h-screen bg-gray-950 text-white">
       <div className={`${isSidebarOpen ? 'block' : 'hidden'} md:block w-full md:w-64 flex-shrink-0 flex flex-col border-r border-gray-800 absolute md:relative z-10 bg-gray-950`}>
@@ -288,7 +352,8 @@ export default function Dashboard() {
         <ScrollArea className="flex-grow p-4">
           {selectedUser ? (
             <div className="space-y-4">
-              {messages.length === 0 ? (
+              {
+               messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full">
                   <MessageSquare className="w-16 h-16 text-gray-600 mb-4" />
                   <p className="text-gray-500 text-lg">No messages with this user yet</p>
@@ -302,13 +367,19 @@ export default function Dashboard() {
                     <div
                       className={`p-2 rounded-lg max-w-xs ${
                         message.senderId === authState.user?.userId ? 'bg-blue-500' : 'bg-gray-800'
-                      } ${
-                        message.senderId === authState.user?.userId ? 'message-animation' : ''
                       }`}
                     >
-                      <p>{message.content}</p>
-                      {message.file && <p>File: {message.file.name}</p>}
-                      <span className="text-xs text-gray-400">{new Date(message.createdAt).toLocaleTimeString()}</span>
+                      {message.content && <p>{message.content}</p>}
+                      {message.image  ? (
+                        <img
+                          src={`data:image/png;base64,${message.image}`}
+                          alt="Attachment"
+                          className="max-w-full h-auto rounded-md mt-2"
+                        />
+                      ):<></>}
+                      <span className="text-xs text-gray-200">
+                        {new Date(message.createdAt).toLocaleTimeString()}
+                      </span>
                     </div>
                   </div>
                 ))
@@ -353,9 +424,9 @@ export default function Dashboard() {
               className="flex-1"
             />
             {selectedFile && (
-              <div className="text-sm text-gray-200 p-2 rounded-md bg-slate-800">
-                SELECTED FILE NAME: {selectedFile.name}
-              </div>
+              <Button className="text-sm text-gray-200 p-2 rounded-md bg-slate-800 hover:bg-red-600 transition hover:cursor-pointer" onClick={handleCancelFile}>
+                {selectedFile.name}
+              </Button>
             )}
             <Button type="submit" className="flex-shrink-0 bg-blue-500 hover:bg-blue-600">
               <Send className="h-4 w-4" />
