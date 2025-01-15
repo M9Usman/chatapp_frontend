@@ -13,6 +13,7 @@ import { logout, getAllUsers } from '../../service/api';
 import { useSocket } from '@/hooks/useSocket';
 import { fetchUserMessagesServices } from '@/service/fetchUsersMessages';
 
+
 type User = {
   id: number;
   name: string;
@@ -74,16 +75,10 @@ export default function Dashboard() {
         console.error('Socket error:', error);
       });
   
-      console.log('Before Typing Receive!');
-      socket.on('typing', ({ userId, isTyping }: { userId: number; isTyping: boolean }) => {
-        console.log(`User with ID ${userId} is typing: ${isTyping ? 'Yes' : 'No'}`); // Detailed log for each typing event
-        setTypingUsers((prev) => (prev ? { ...prev, [userId]: isTyping } : { [userId]: isTyping }));
-      });
   
       return () => {
         socket.off('newMessage');
         socket.off('error');
-        socket.off('typing');
       };
     }
   }, [socket]);
@@ -134,9 +129,14 @@ export default function Dashboard() {
       };
 
       socket.emit('sendMessage', newMessage);
+    
+    // Add a small delay before updating the state
+    setTimeout(() => {
       setMessages((prevMessages:any) => [...prevMessages, newMessage]);
+    }, 50);
+
       setMessageInput('');
-      socket.emit('typing', { userId: authState.user.userId, chatId: selectedUser.id, isTyping: false });
+      // socket.emit('typing', { userId: authState.user.userId, chatId: selectedUser.id, isTyping: false });
     }
   };
 
@@ -149,7 +149,7 @@ export default function Dashboard() {
     if(socket){
       let typingTimeout: NodeJS.Timeout;
       console.log(messageInput.trim());
-      if (messageInput.trim()) {
+      if (messageInput.trim()!=='') {
         typingTimeout = setTimeout(() => {
           socket!.emit('typing', {
             userId: authState.user?.userId,
@@ -158,8 +158,9 @@ export default function Dashboard() {
             receiverId: selectedUser?.id,
           });
           console.log('Start typing socket hit');
-        }, 2000); // 2 seconds
+        }, 1000); // 2 seconds
       } else {
+        console.log('Stoping the typing!');
         socket!.emit('typing', {
           userId: authState.user?.userId,
           chatId: chatId,
@@ -173,28 +174,35 @@ export default function Dashboard() {
       };
     }
   }, [messageInput]);
-
+  
   useEffect(() => {
-    console.log('typing is recieving');
     if (socket) {
-      
-      console.log('INSIDE IF : typing is recieving');
-      const handleTyping = (data: { userId: string; chatId: string; typingFlag: boolean; receiverId: string }) => {
-        if (data.receiverId === authState.user?.userId && data.chatId === chatId) {
-          console.log(`${data.userId} is ${data.typingFlag ? 'typing...' : 'not typing.'}`);
-          console.log('INSIDE CALL : typing is recieving');
-      
-        }
+      const handleTyping = (data: { userId: number; typing: boolean }) => {
+        console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'}`);
+        setTypingUsers((prevTypingUsers) => {
+          if (data.typing) {
+            return { ...prevTypingUsers, [data.userId]: true };
+          } else {
+            const { [data.userId]: _, ...rest } = prevTypingUsers;
+            return rest;
+          }
+        });
       };
   
-      socket.on('typing', handleTyping);
+      // Attach event listener
+      socket.on('recievetyping', handleTyping);
   
+      // Cleanup the event listener on unmount
       return () => {
-        socket.off('typing', handleTyping); // Cleanup listener on unmount
+        socket.off('recievetyping', handleTyping);
       };
     }
   }, [socket, chatId, authState.user?.userId]);
   
+  // Log the current state of typing users when it updates
+  useEffect(() => {
+    console.log('Current typing users:', typingUsers);
+  }, [typingUsers]);
   
   
   const selectUserChat = async (user: User) => {
@@ -290,7 +298,11 @@ export default function Dashboard() {
                     className={`flex ${message.senderId === authState.user?.userId ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`p-2 rounded-lg max-w-xs ${message.senderId === authState.user?.userId ? 'bg-blue-500' : 'bg-gray-800'}`}
+                      className={`p-2 rounded-lg max-w-xs ${
+                        message.senderId === authState.user?.userId ? 'bg-blue-500' : 'bg-gray-800'
+                      } ${
+                        message.senderId === authState.user?.userId ? 'message-animation' : ''
+                      }`}
                     >
                       <p>{message.content}</p>
                       <span className="text-xs text-gray-400">{new Date(message.createdAt).toLocaleTimeString()}</span>
@@ -309,10 +321,14 @@ export default function Dashboard() {
         </ScrollArea>
 
         {selectedUser && (
+          <div className='flex flex-col gap-1 p-1 pl-2 '>
+          {typingUsers[selectedUser.id] && (
+            <div className="bg-gray-800 text-white text-sm italic p-3 w-max rounded-md ml-2 animate-bounce">
+              Typing....
+            </div>
+          )}
           <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex items-center space-x-4">
-            {typingUsers[selectedUser.id] && (
-              <div className="text-gray-400 text-sm italic">Typing...</div>
-            )}
+            
             <Input
               type="text"
               placeholder="Type a message..."
@@ -324,8 +340,10 @@ export default function Dashboard() {
               <Send className="h-4 w-4" />
             </Button>
           </form>
+          </div>
         )}
       </div>
     </div>
   );
 }
+
