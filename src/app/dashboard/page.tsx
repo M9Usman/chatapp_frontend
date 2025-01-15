@@ -5,14 +5,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Menu, X, LogOut, MessageSquare } from 'lucide-react';
+import { Send, Menu, X, LogOut, MessageSquare, Smile } from 'lucide-react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { clearToken } from '@/store/authSlice';
 import { logout, getAllUsers } from '../../service/api';
 import { useSocket } from '@/hooks/useSocket';
 import { fetchUserMessagesServices } from '@/service/fetchUsersMessages';
-
+import { FileInput } from "../../components/FileInput";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import Picker from '@emoji-mart/react';
+import emojiData from '@emoji-mart/data';
 
 type User = {
   id: number;
@@ -27,6 +30,7 @@ type Message = {
   timestamp: string;
   createdAt: string;
   updatedAt: string;
+  file?: File | null;
 };
 interface ChatData {
   chatId: number;
@@ -49,6 +53,7 @@ export default function Dashboard() {
   const authState = useSelector((state: any) => state.auth);
   const socket = useSocket(authState.user?.userId);
   const [chatId,setChatId] = useState(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   useEffect(() => {
     if (authState.token) {
       fetchUsers();
@@ -139,23 +144,23 @@ export default function Dashboard() {
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (messageInput.trim() && selectedUser && socket && authState.user) {
+    if ((messageInput.trim() || selectedFile) && selectedUser && socket && authState.user) {
       const newMessage = {
         senderId: authState.user.userId,
         receiverId: selectedUser.id,
         content: messageInput.trim(),
+        file: selectedFile,
         createdAt: new Date().toISOString(),
       };
 
       socket.emit('sendMessage', newMessage);
-    
-    // Add a small delay before updating the state
+
     setTimeout(() => {
       setMessages((prevMessages:any) => [...prevMessages, newMessage]);
     }, 50);
 
       setMessageInput('');
-      // socket.emit('typing', { userId: authState.user.userId, chatId: selectedUser.id, isTyping: false });
+      setSelectedFile(null);
     }
   };
 
@@ -177,7 +182,7 @@ export default function Dashboard() {
             receiverId: selectedUser?.id,
           });
           console.log('Start typing socket hit');
-        }, 1000); // 2 seconds
+        }, 500); // 0.5 seconds
       } else {
         console.log('Stoping the typing!');
         socket!.emit('typing', {
@@ -194,31 +199,6 @@ export default function Dashboard() {
     }
   }, [messageInput]);
   
-  // useEffect(() => {
-  //   if (socket) {
-  //     const handleTyping = (data: { userId: number; typing: boolean }) => {
-  //       console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'}`);
-  //       setTypingUsers((prevTypingUsers) => {
-  //         if (data.typing) {
-  //           return { ...prevTypingUsers, [data.userId]: true };
-  //         } else {
-  //           const { [data.userId]: _, ...rest } = prevTypingUsers;
-  //           return rest;
-  //         }
-  //       });
-  //     };
-  
-  //     // Attach event listener
-  //     socket.on('recievetyping', handleTyping);
-  
-  //     // Cleanup the event listener on unmount
-  //     return () => {
-  //       socket.off('recievetyping', handleTyping);
-  //     };
-  //   }
-  // }, [socket, chatId, authState.user?.userId]);
-  
-  // Log the current state of typing users when it updates
   useEffect(() => {
     console.log('Current typing users:', typingUsers);
   }, [typingUsers]);
@@ -251,7 +231,10 @@ export default function Dashboard() {
       console.error('Error fetching user chat:', error);
     }
   };
-
+  const handleEmojiSelect = (emoji: { native: string }) => {
+    setMessageInput((prev) => prev + emoji.native);
+  };
+  
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen bg-gray-950 text-white">Loading...</div>;
   }
@@ -324,6 +307,7 @@ export default function Dashboard() {
                       }`}
                     >
                       <p>{message.content}</p>
+                      {message.file && <p>File: {message.file.name}</p>}
                       <span className="text-xs text-gray-400">{new Date(message.createdAt).toLocaleTimeString()}</span>
                     </div>
                   </div>
@@ -347,7 +331,20 @@ export default function Dashboard() {
             </div>
           )}
           <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex items-center space-x-4">
-            
+            <FileInput onFileSelect={setSelectedFile} />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <Smile className="h-5 w-5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 bg-transparent border-none">
+                <Picker
+                  data={emojiData}
+                  onEmojiSelect={handleEmojiSelect}
+                />
+              </PopoverContent>
+            </Popover>
             <Input
               type="text"
               placeholder="Type a message..."
@@ -355,6 +352,11 @@ export default function Dashboard() {
               onChange={handleInputChange}
               className="flex-1"
             />
+            {selectedFile && (
+              <div className="text-sm text-gray-200 p-2 rounded-md bg-slate-800">
+                SELECTED FILE NAME: {selectedFile.name}
+              </div>
+            )}
             <Button type="submit" className="flex-shrink-0 bg-blue-500 hover:bg-blue-600">
               <Send className="h-4 w-4" />
             </Button>
