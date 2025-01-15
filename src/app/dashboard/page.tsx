@@ -76,12 +76,31 @@ export default function Dashboard() {
       });
   
   
+    
+      const handleTyping = (data: { userId: number; typing: boolean }) => {
+        console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'}`);
+        setTypingUsers((prevTypingUsers) => {
+          if (data.typing) {
+            return { ...prevTypingUsers, [data.userId]: true };
+          } else {
+            const { [data.userId]: _, ...rest } = prevTypingUsers;
+            return rest;
+          }
+        });
+      };
+  
+      // Attach event listener
+      socket.on('recievetyping', handleTyping);
+  
+      // Cleanup the event listener on unmount
       return () => {
+        socket.off('recievetyping', handleTyping);
         socket.off('newMessage');
         socket.off('error');
+        };
       };
     }
-  }, [socket]);
+  , [socket, chatId, authState.user?.userId]);
 
   const fetchUsers = async () => {
     try {
@@ -175,29 +194,29 @@ export default function Dashboard() {
     }
   }, [messageInput]);
   
-  useEffect(() => {
-    if (socket) {
-      const handleTyping = (data: { userId: number; typing: boolean }) => {
-        console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'}`);
-        setTypingUsers((prevTypingUsers) => {
-          if (data.typing) {
-            return { ...prevTypingUsers, [data.userId]: true };
-          } else {
-            const { [data.userId]: _, ...rest } = prevTypingUsers;
-            return rest;
-          }
-        });
-      };
+  // useEffect(() => {
+  //   if (socket) {
+  //     const handleTyping = (data: { userId: number; typing: boolean }) => {
+  //       console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'}`);
+  //       setTypingUsers((prevTypingUsers) => {
+  //         if (data.typing) {
+  //           return { ...prevTypingUsers, [data.userId]: true };
+  //         } else {
+  //           const { [data.userId]: _, ...rest } = prevTypingUsers;
+  //           return rest;
+  //         }
+  //       });
+  //     };
   
-      // Attach event listener
-      socket.on('recievetyping', handleTyping);
+  //     // Attach event listener
+  //     socket.on('recievetyping', handleTyping);
   
-      // Cleanup the event listener on unmount
-      return () => {
-        socket.off('recievetyping', handleTyping);
-      };
-    }
-  }, [socket, chatId, authState.user?.userId]);
+  //     // Cleanup the event listener on unmount
+  //     return () => {
+  //       socket.off('recievetyping', handleTyping);
+  //     };
+  //   }
+  // }, [socket, chatId, authState.user?.userId]);
   
   // Log the current state of typing users when it updates
   useEffect(() => {
