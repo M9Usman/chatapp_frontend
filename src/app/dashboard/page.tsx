@@ -9,7 +9,7 @@ import { Send, Menu, X, LogOut, MessageSquare, Smile, Users, UserPlus, RefreshCc
 import { useSelector, useDispatch } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { clearToken } from '@/store/authSlice';
-import { logout, getAllUsers } from '../../service/api';
+import { logout, getAllUsers, getChatGroups } from '../../service/api';
 import { useSocket } from '@/hooks/useSocket';
 import { fetchUserMessagesServices } from '@/service/fetchUsersMessages';
 import { FileInput } from "../../components/FileInput";
@@ -17,6 +17,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Picker from '@emoji-mart/react';
 import emojiData from '@emoji-mart/data';
+import { CreateGroupPopup } from '../../components/CreateGroupPopup';
 
 type User = {
   id: number;
@@ -32,6 +33,24 @@ type Message = {
   createdAt: string;
   updatedAt: string;
   image?: object | null;
+};
+
+// Participant type
+type Participant = {
+  id: number;
+  name: string;
+  email: string;
+  verified: boolean;
+};
+
+// Group type
+type Group = {
+  id: number;
+  name: string;
+  type: string;
+  createdAt: string;
+  updatedAt: string;
+  participants: Participant[];
 };
 
 interface ChatData {
@@ -52,13 +71,14 @@ export default function Dashboard() {
   const router = useRouter();
   const [loadingMsg,setLoadingMsg]=useState(true);
   const dispatch = useDispatch();
-  const [typingTimeout, setTypingTimeout] = useState<any>(null);
   const authState = useSelector((state: any) => state.auth);
   const socket = useSocket(authState.user?.userId);
   const [chatId, setChatId] = useState(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState('single');
-
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [userTyping,setUserTyping]= useState(null);
+  const [groups, setGroups] = useState<Group[]>([]); // For chat groups
   useEffect(() => {
     if (authState.token) {
       fetchUsers();
@@ -67,6 +87,7 @@ export default function Dashboard() {
     }
   }, [authState.token, authState.user, router]);
 
+  
   useEffect(() => {
     console.log('Chat ID updates : ', chatId);
   }, [chatId]);
@@ -76,6 +97,7 @@ export default function Dashboard() {
       console.log('Socket connected:', socket.id);
 
       socket.on('newMessage', (message: Message) => {
+        console.warn('Message Here : ',message);
         if (message.senderId === selectedUser?.id || message.senderId === authState.user?.userId) {
           setMessages((prevMessages) => [...prevMessages, message]);
           console.log('newMessage : ', message);
@@ -86,8 +108,25 @@ export default function Dashboard() {
         console.error('Socket error:', error);
       });
 
+      socket.on('groupCreated', (group) => {
+        console.log('New group created:', group);
+        // Update the UI to display the new group
+      });
+      
+      // Listen for acknowledgment from backend
+      socket.on('groupCreatedAck', (group) => {
+        console.log('Group created successfully:', group);
+      });
+
+      // Listen for errors during group creation
+      socket.on('groupCreationError', (error) => {
+        console.error('Error creating group:', error);
+      });
+
       const handleTyping = (data: { userId: number; typing: boolean }) => {
         console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'}`);
+        const currTypingUser= users.find(user=>user.id===data.userId);
+        console.log('Data to Data Coming : ',currTypingUser);
         setTypingUsers((prevTypingUsers) => {
           if (data.typing) {
             return { ...prevTypingUsers, [data.userId]: true };
@@ -96,6 +135,7 @@ export default function Dashboard() {
             return rest;
           }
         });
+        console.log('Data typing user  : ',setTypingUsers);
       };
 
       socket.on('recievetyping', handleTyping);
@@ -120,7 +160,18 @@ export default function Dashboard() {
       setIsLoading(false);
     }
   };
-
+  // Fetch chat groups function
+  const fetchChatGroups = async () => {
+    try {
+      const fetchedGroups = await getChatGroups();
+      setGroups(fetchedGroups.groups);
+      console.log('Fetched Groups : ',groups);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching chat groups:', error);
+      setIsLoading(false);
+    }
+  };
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
@@ -160,6 +211,8 @@ export default function Dashboard() {
             content: messageInput.trim(),
             image: base64Image,
             createdAt: new Date().toISOString(),
+            msgType:"Notgroups",
+            chatId:chatId
           };
 
           socket.emit('sendMessage', newMessage);
@@ -175,7 +228,9 @@ export default function Dashboard() {
           receiverId: selectedUser.id,
           content: messageInput.trim(),
           image: base64Image,
-          createdAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),   
+          msgType:"Notgroups",
+          chatId:chatId
         };
 
         socket.emit('sendMessage', newMessage);
@@ -184,6 +239,14 @@ export default function Dashboard() {
         setMessageInput('');
       }
     }
+  };
+
+   // Function to handle creating a new group
+  const handleCreateGroup = (group: { name: string; participants: number[] }) => {
+    // Emit 'createGroup' event to the backend
+    socket!.emit('createGroup', group);
+
+    console.log('Creating group:', group);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -282,6 +345,9 @@ export default function Dashboard() {
     setSelectedFile(null);
   };
 
+
+  // UI STARTED
+
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen bg-gray-950 text-white">Loading...</div>;
   }
@@ -308,26 +374,32 @@ export default function Dashboard() {
         </div>
         <Tabs defaultValue="single" className="w-full px-4 mb-4">
           <TabsList className="grid w-full grid-cols-2 bg-gray-800">
-            <TabsTrigger 
-              value="single" 
-              onClick={() => setActiveTab('single')}
-              className="data-[state=active]:bg-slate-300 data-[state=active]:text-black"
-            >
-              Chats
-            </TabsTrigger>
-            <TabsTrigger 
-              value="group" 
-              onClick={() => setActiveTab('group')}
-              className="data-[state=active]:bg-slate-300 data-[state=active]:text-black"
-            >
-              Groups
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+              <TabsTrigger
+                value="single"
+                onClick={() => {
+                  setActiveTab('single');
+                  fetchUsers(); // Call fetchUsers when "Chats" tab is clicked
+                }}
+                className="data-[state=active]:bg-slate-300 data-[state=active]:text-black"
+              >
+                Chats
+              </TabsTrigger>
+              <TabsTrigger
+                value="group"
+                onClick={() => {
+                  setActiveTab('group');
+                  fetchChatGroups(); // Call fetchChatGroups when "Groups" tab is clicked
+                }}
+                className="data-[state=active]:bg-slate-300 data-[state=active]:text-black"
+              >
+                Groups
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         <div className="flex justify-between items-center px-4 mb-4">
           <Button
             variant="outline"
-            onClick={() => {/* Add group creation logic */}}
+            onClick={() => setShowCreateGroup(true)}
             className="flex-grow text-white bg-gray-600 hover:bg-gray-200 hover:shadow-lg hover:shadow-gray-500 transition-all duration-300 transform hover:scale-105"
           >
             <UserPlus className="mr-2 h-4 w-4" />
@@ -352,11 +424,28 @@ export default function Dashboard() {
               </div>
             ))
           ) : (
-            <div className="text-center text-gray-500 mt-4">
-              No groups available
-            </div>
+            groups?.length >= 0 ? (
+              groups?.map((group) => (
+                <div
+                  key={group.id}
+                  className={`flex flex-col m-3 rounded-xl space-y-2 p-4 hover:bg-gray-800 cursor-pointer`}
+                  onClick={() => {
+                    // Handle group selection here
+                    console.log('Selected group:', group);
+                  }}
+                >
+                  <h3 className="font-medium">{group.name}</h3>
+                  <p className="text-sm text-gray-400">
+                    {group.participants.length} participants
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="text-center text-gray-500 mt-4">No groups available!</div>
+            )
           )}
         </ScrollArea>
+
         <Button
           variant="ghost"
           className="m-4 bg-gray-900 w-auto justify-start text-red-500 hover:text-gray-200 transition hover:border-2 hover:bg-[#ff3232]"
@@ -404,6 +493,12 @@ export default function Dashboard() {
                         message.senderId === authState.user?.userId ? 'bg-gray-200 text-black' : 'bg-gray-800 text-white'
                       }`}
                     >
+                      {message.senderId !== authState.user?.userId && (
+                          <span className="text-xs text-gray-400 border-b border-gray-300  mb-5">
+                            {users.find((user) => user.id === message.senderId)?.name || 'Unknown User'}
+                          </span>
+                        )}
+                    
                       {message.content && <p>{message.content}</p>}
                       {message.image ? (
                         <img
@@ -433,7 +528,7 @@ export default function Dashboard() {
           <div className='flex flex-col gap-1 p-1 pl-2 '>
             {typingUsers[selectedUser.id] && (
               <div className="bg-gray-800 text-white text-sm italic p-3 w-max rounded-md ml-2 animate-bounce">
-                Typing....
+                {selectedUser.name} is Typing....
               </div>
             )}
             <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex items-center space-x-4">
@@ -470,6 +565,13 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      {showCreateGroup && (
+        <CreateGroupPopup
+          users={users}
+          onClose={() => setShowCreateGroup(false)}
+          onCreateGroup={handleCreateGroup}
+        />
+      )}
     </div>
   );
 }

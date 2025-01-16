@@ -1,7 +1,7 @@
 import { store } from '@/store/store';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:4000/auth';
+const API_URL = 'http://localhost:4000';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -23,9 +23,9 @@ api.interceptors.request.use((config) => {
 // Logout function that sends a POST request to '/logout'
 export const logout = async () => {
   try {
-    const response = await api.post('/logout');
+    const response = await api.post('/auth/logout');
     return response.data;
-  } catch (error:any) {
+  } catch (error: any) {
     console.error('Logout error:', {
       message: error.message,
       requestConfig: {
@@ -43,10 +43,21 @@ export const logout = async () => {
 // Get all users function that sends a GET request to '/'
 export const getAllUsers = async () => {
   try {
-    const response = await api.get('/');
+    const response = await api.get('/auth');
     return response.data;
   } catch (error) {
     console.error('Get all users error:', error);
+    throw error;
+  }
+};
+
+// Get chat groups function that sends a GET request to '/chat/groups'
+export const getChatGroups = async () => {
+  try {
+    const response = await api.get('/chat/groups');
+    return response.data;
+  } catch (error) {
+    console.error('Get chat groups error:', error);
     throw error;
   }
 };
