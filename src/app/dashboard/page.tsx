@@ -9,7 +9,7 @@ import { Send, Menu, X, LogOut, MessageSquare, Smile, Users, UserPlus, RefreshCc
 import { useSelector, useDispatch } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { clearToken } from '@/store/authSlice';
-import { logout, getAllUsers, getChatGroups } from '../../service/api';
+import { logout, getAllUsers, getChatGroups, getChatById } from '../../service/api';
 import { useSocket } from '@/hooks/useSocket';
 import { fetchUserMessagesServices } from '@/service/fetchUsersMessages';
 import { FileInput } from "../../components/FileInput";
@@ -108,9 +108,13 @@ export default function Dashboard() {
         console.error('Socket error:', error);
       });
 
-      socket.on('groupCreated', (group) => {
-        console.log('New group created:', group);
-        // Update the UI to display the new group
+      socket.on('groupCreated', (newGroup) => {
+        // console.log('New group created:', newGroup);
+        // Update groups array with the newly created group
+        setGroups((prevGroups) => [...prevGroups, newGroup]);
+    
+        // Optionally, fetch updated groups to refresh the UI
+        fetchChatGroups();
       });
       
       // Listen for acknowledgment from backend
@@ -241,13 +245,16 @@ export default function Dashboard() {
     }
   };
 
-   // Function to handle creating a new group
   const handleCreateGroup = (group: { name: string; participants: number[] }) => {
-    // Emit 'createGroup' event to the backend
-    socket!.emit('createGroup', group);
-
-    console.log('Creating group:', group);
+    // Add the authenticated user's ID to the participants array
+    const participantsWithUser = [...group.participants, authState.user?.userId];
+  
+    // Emit 'createGroup' event to the backend with updated participants
+    socket!.emit('createGroup', { name: group.name, participants: participantsWithUser });
+  
+    console.log('Creating group:', { name: group.name, participants: participantsWithUser });
   };
+  
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessageInput(e.target.value);
@@ -287,6 +294,39 @@ export default function Dashboard() {
     console.log('Current typing users:', typingUsers);
   }, [typingUsers]);
 
+  // Selecting messages for group
+  // Fetch Group Chat
+  const fetchGroupChat = async (chatId: number) => {
+    try {
+      const chatData = await getChatById(chatId);
+
+      if (chatData && chatData.participants && chatData.messages) {
+        console.log('Fetched group chat data:', chatData);
+        
+        // Assuming chatData.participants is an array of participant objects
+        const participantsList = chatData.participants.map((participant: any) => participant.name).join(', ');
+
+        console.log('Participants:', participantsList);
+
+        // Displaying messages
+        chatData.messages.forEach((message: any) => {
+          if (message.image) {
+            console.log('Group Chat Image:', message.image);
+          }
+        });
+
+        setMessages(chatData.messages);
+      } else {
+        console.error('No valid chat data received');
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Error fetching group chat data:', error);
+    }
+  };
+
+  
+  // Selecting Message for one on one
   const selectUserChat = async (user: User) => {
     try {
       const otherUserId = user.id;
@@ -406,7 +446,7 @@ export default function Dashboard() {
             Create Group
           </Button>
         </div>
-        <ScrollArea className="flex-grow">
+        <ScrollArea className="flex-grow h-screen">
           {activeTab === 'single' ? (
             filteredUsers.map((user) => (
               <div
@@ -431,6 +471,8 @@ export default function Dashboard() {
                   className={`flex flex-col m-3 rounded-xl space-y-2 p-4 hover:bg-gray-800 cursor-pointer`}
                   onClick={() => {
                     // Handle group selection here
+                    setIsSidebarOpen(false);
+                    fetchGroupChat(group.id);
                     console.log('Selected group:', group);
                   }}
                 >

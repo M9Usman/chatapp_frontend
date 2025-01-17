@@ -61,5 +61,15 @@ export const getChatGroups = async () => {
     throw error;
   }
 };
+export const getChatById = async (chatId:number) => {
+  try {
+    const response = await api.get(`/chat/${chatId}`); // Replace with the endpoint for fetching a specific chat
+    return response.data;
+  } catch (error) {
+    console.error('Get chat by ID error:', error);
+    throw error;
+  }
+};
+
 
 export default api;
