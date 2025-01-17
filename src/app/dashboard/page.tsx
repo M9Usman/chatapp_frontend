@@ -33,6 +33,7 @@ type Message = {
   createdAt: string;
   updatedAt: string;
   image?: object | null;
+  chatId:number;
 };
 
 // Participant type
@@ -73,17 +74,17 @@ export default function Dashboard() {
   const dispatch = useDispatch();
   const authState = useSelector((state: any) => state.auth);
   const socket = useSocket(authState.user?.userId);
-  const [chatId, setChatId] = useState(null);
+  const [chatId, setChatId] = useState<number|null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState('single');
   const [showCreateGroup, setShowCreateGroup] = useState(false);
-  const [userTyping,setUserTyping]= useState(null);
   const [groups, setGroups] = useState<Group[]>([]); 
   const [selectedGroup,setSelectedGroup]=useState<Group>(); 
 
   useEffect(() => {
     if (authState.token) {
       fetchUsers();
+      console.log('User:',users);
     } else {
       router.push('/');
     }
@@ -98,13 +99,19 @@ export default function Dashboard() {
     if (socket) {
       console.log('Socket connected:', socket.id);
 
-      socket.on('newMessage', (message: Message) => {
+      socket.on('newMessage', (message: Message,group:boolean) => {
         console.log('Message Here : ',message);
-        if (message.senderId === selectedUser?.id || message.senderId === authState.user?.userId) {
+        if(message){
+          console.log(' Chat ID : ',message.chatId,' Curr Chat Id: ',chatId);
+        }
+        if (message.chatId === chatId) {
           setMessages((prevMessages) => [...prevMessages, message]);
           console.log('newMessage : ', message);
+          console.log('Group : ',group)
         }
       });
+
+      
 
       socket.on('error', (error: any) => {
         console.error('Socket error:', error);
@@ -129,21 +136,26 @@ export default function Dashboard() {
         console.error('Error creating group:', error);
       });
 
-      const handleTyping = (data: { userId: number; typing: boolean }) => {
-        console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'}`);
-        const currTypingUser= users.find(user=>user.id===data.userId);
-        console.log('Data to Data Coming : ',currTypingUser);
-        setTypingUsers((prevTypingUsers) => {
-          if (data.typing) {
-            return { ...prevTypingUsers, [data.userId]: true };
-          } else {
-            const { [data.userId]: _, ...rest } = prevTypingUsers;
-            return rest;
-          }
-        });
-        console.log('Data typing user  : ',setTypingUsers);
+      // Typing indicator handler
+      const handleTyping = (data: { userId: number; chatId: number; typing: boolean; group: boolean }) => {
+        console.log(`${data.userId} is ${data.typing ? 'typing...' : 'not typing.'} in chat ${data.chatId}`);
+        
+        if (data?.chatId === chatId) {
+          const typingUser = users.find((user) => user.id === data.userId);
+
+          console.log('Typing User:', typingUser);
+          setTypingUsers((prevTypingUsers) => {
+            if (data.typing) {
+              return { ...prevTypingUsers, [data.userId]: true };
+            } else {
+              const { [data.userId]: _, ...rest } = prevTypingUsers;
+              return rest;
+            }
+          });
+        }
       };
 
+      // Listening for typing events
       socket.on('recievetyping', handleTyping);
 
       return () => {
@@ -181,7 +193,6 @@ export default function Dashboard() {
   // Fetch chat groups function
   const fetchChatGroups = async () => {
     try {
-      setUsers([]); // Clear users when fetching groups
       const fetchedGroups = await getChatGroups();
       setGroups(fetchedGroups.groups);
       console.log('Fetched Groups : ', fetchedGroups.groups);
@@ -218,8 +229,8 @@ export default function Dashboard() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-  
-    if (!(messageInput.trim() || selectedFile) || !selectedUser || !socket || !authState.user) {
+    console.log('In Message!');
+    if (!(messageInput.trim() || selectedFile) || !socket || !authState.user) {
       return;
     }
   
@@ -287,36 +298,80 @@ export default function Dashboard() {
     setMessageInput(e.target.value);
   };
 
+  // useEffect(() => {
+  //   if (socket) {
+  //     let typingTimeout: NodeJS.Timeout;
+  //     console.log(messageInput.trim());
+  //     if (messageInput.trim() !== '') {
+  //       typingTimeout = setTimeout(() => {
+  //         socket!.emit('typing', {
+  //           userId: authState.user?.userId,
+  //           chatId: chatId,
+  //           typingFlag: true,
+  //           receiverId: selectedUser?.id,
+  //         });
+  //         console.log('Start typing socket hit');
+  //       }, 300);
+  //     } else {
+  //       console.log('Stopping the typing!');
+  //       socket!.emit('typing', {
+  //         userId: authState.user?.userId,
+  //         chatId: chatId,
+  //         typingFlag: false,
+  //         receiverId: selectedUser?.id,
+  //       });
+  //     }
+
+  //     return () => {
+  //       clearTimeout(typingTimeout);
+  //     };
+  //   }
+  // }, [messageInput, socket, authState.user?.userId, chatId, selectedUser?.id]);
+
   useEffect(() => {
     if (socket) {
       let typingTimeout: NodeJS.Timeout;
-      console.log(messageInput.trim());
-      if (messageInput.trim() !== '') {
-        typingTimeout = setTimeout(() => {
-          socket!.emit('typing', {
-            userId: authState.user?.userId,
-            chatId: chatId,
-            typingFlag: true,
-            receiverId: selectedUser?.id,
-          });
-          console.log('Start typing socket hit');
-        }, 300);
-      } else {
-        console.log('Stopping the typing!');
-        socket!.emit('typing', {
+  
+      const emitTyping = (isTyping: boolean) => {
+        const commonPayload = {
           userId: authState.user?.userId,
           chatId: chatId,
-          typingFlag: false,
-          receiverId: selectedUser?.id,
-        });
+          typing: isTyping,
+        };
+  
+        if (groups.length > 0) {
+          // Emit for group chat
+          socket.emit('typing', {
+            ...commonPayload,
+            participants: selectedGroup?.participants || [],
+          });
+          console.log(`Typing ${isTyping ? 'started' : 'stopped'} in group chat`);
+        } else {
+          // Emit for one-on-one chat
+          socket.emit('typing', {
+            ...commonPayload,
+            receiverId: selectedUser?.id,
+          });
+          console.log(`Typing ${isTyping ? 'started' : 'stopped'} in one-on-one chat`);
+        }
+      };
+  
+      if (messageInput.trim() !== '') {
+        // Start typing after a delay
+        typingTimeout = setTimeout(() => {
+          emitTyping(true);
+        }, 300);
+      } else {
+        // Stop typing immediately
+        emitTyping(false);
       }
-
+  
       return () => {
-        clearTimeout(typingTimeout);
+        clearTimeout(typingTimeout); // Cleanup typing timeout
       };
     }
-  }, [messageInput, socket, authState.user?.userId, chatId, selectedUser?.id]);
-
+  }, [messageInput, socket, authState.user?.userId, chatId, selectedUser?.id, selectedGroup?.participants, groups]);
+  
   useEffect(() => {
     console.log('Current typing users:', typingUsers);
   }, [typingUsers]);
@@ -329,9 +384,10 @@ export default function Dashboard() {
       setChatId(selectedGroup.id);
     }
       console.log('Selected Group Chat Updated : ',selectedGroup)
-  },[selectedGroup])
+  },[selectedGroup]);
   const fetchGroupChat = async (chatId: number) => {
     try {
+      setLoadingMsg(true);
       const chatData = await getChatById(chatId);
 
       if (chatData && chatData.participants && chatData.messages) {
@@ -340,19 +396,10 @@ export default function Dashboard() {
         
 
         // Collecting Participants 
-        // const currparticipantsList = chatData.participants.map((participant: any) => participant.name).join(', ');
-
-        // console.log('Participants:', currparticipantsList);
-
-        // Displaying messages - Test
-        // chatData.messages.forEach((message: any) => {
-        //   if (message.image) {
-        //     console.log('Group Chat Image:', message.image);
-        //   }
-        // });
-
         setMessages(chatData.messages);
+        setLoadingMsg(false);
       } else {
+        setLoadingMsg(false);
         console.error('No valid chat data received');
         setMessages([]);
       }
@@ -360,8 +407,7 @@ export default function Dashboard() {
       console.error('Error fetching group chat data:', error);
     }
   };
-
-  
+useEffect(()=>{console.warn('Messages Are Update: ',messages)},[messages])
   // Selecting Message for one on one
   const selectUserChat = async (user: User) => {
     try {
@@ -391,18 +437,16 @@ export default function Dashboard() {
 
         scrollToBottom();
       } else {
+        setLoadingMsg(false);
         setChatId(null);
         console.log('no Chat Id');
         setMessages([]);
       }
     } catch (error) {
+      setLoadingMsg(false);
       console.error('Error fetching user chat:', error);
     }
   };
-
-  useEffect(() => {
-    console.log('Messages Updated : ', messages);
-  }, [messages]);
 
   const handleEmojiSelect = (emoji: { native: string }) => {
     setMessageInput((prev) => prev + emoji.native);
@@ -549,11 +593,11 @@ export default function Dashboard() {
               <X className="h-5 w-5" />
             </Button>
           )}
-          <h2 className="font-semibold">{selectedUser ? selectedUser.name : 'Select a user to chat'}</h2>
+          <h2 className="font-semibold">{ (groups.length>0)? selectedGroup?.name : selectedUser ? selectedUser.name : 'Select a user to chat'}</h2>
         </div>
 
         <ScrollArea className="flex-grow p-4">
-          {selectedUser ? (
+          {(selectedUser||selectedGroup) ? (
             <div className="space-y-4">
               {
               loadingMsg ? (
@@ -607,13 +651,27 @@ export default function Dashboard() {
           )}
         </ScrollArea>
 
-        {selectedUser && (
-          <div className='flex flex-col gap-1 p-1 pl-2 '>
-            {typingUsers[selectedUser.id] && (
-              <div className="bg-gray-800 text-white text-sm italic p-3 w-max rounded-md ml-2 animate-bounce">
-                {selectedUser.name} is Typing....
-              </div>
-            )}
+        {(selectedUser || selectedGroup) && (
+            <div className="flex flex-col gap-1 p-1 pl-2">
+              {selectedUser && typingUsers[selectedUser.id] ? (
+                <div className="bg-gray-800 text-white text-sm italic p-3 w-max rounded-md ml-2 animate-bounce">
+                  {selectedUser.name} is typing...
+                </div>
+              ) : selectedGroup && (
+                <>
+                  {selectedGroup.participants.map(
+                    (participant) =>
+                      typingUsers[participant.id] && (
+                        <div
+                          key={participant.id}
+                          className="bg-gray-800 text-white text-sm italic p-3 w-max rounded-md ml-2 animate-bounce"
+                        >
+                          {participant.name} is typing...
+                        </div>
+                      )
+                  )}
+                </>
+              )}
             <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-800 flex items-center space-x-4">
               <FileInput onFileSelect={setSelectedFile} />
               <Popover>
