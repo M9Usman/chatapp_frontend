@@ -78,7 +78,9 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('single');
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [userTyping,setUserTyping]= useState(null);
-  const [groups, setGroups] = useState<Group[]>([]); // For chat groups
+  const [groups, setGroups] = useState<Group[]>([]); 
+  const [selectedGroup,setSelectedGroup]=useState<Group>(); 
+
   useEffect(() => {
     if (authState.token) {
       fetchUsers();
@@ -97,7 +99,7 @@ export default function Dashboard() {
       console.log('Socket connected:', socket.id);
 
       socket.on('newMessage', (message: Message) => {
-        console.warn('Message Here : ',message);
+        console.log('Message Here : ',message);
         if (message.senderId === selectedUser?.id || message.senderId === authState.user?.userId) {
           setMessages((prevMessages) => [...prevMessages, message]);
           console.log('newMessage : ', message);
@@ -152,30 +154,45 @@ export default function Dashboard() {
     }
   }, [socket, chatId, authState.user?.userId, selectedUser?.id]);
 
+  // For Testing Only
+  // useEffect(()=>{
+  //   console.log('Groups Effect : ',groups);
+  // },[groups]);
+
+  // useEffect(()=>{
+  //   console.log('User Effect : ',users);
+  // },[users]);
+
   const fetchUsers = async () => {
     try {
+      setGroups([]); // Clear groups when fetching users
       const fetchedUsers = await getAllUsers();
       const filteredFetchedUsers = fetchedUsers.filter((user: User) => user.id !== authState.user?.userId);
       setUsers(filteredFetchedUsers);
       setFilteredUsers(filteredFetchedUsers);
       setIsLoading(false);
+      console.log('in fetching user');
     } catch (error) {
       console.error('Error fetching users:', error);
       setIsLoading(false);
     }
   };
+  
   // Fetch chat groups function
   const fetchChatGroups = async () => {
     try {
+      setUsers([]); // Clear users when fetching groups
       const fetchedGroups = await getChatGroups();
       setGroups(fetchedGroups.groups);
-      console.log('Fetched Groups : ',groups);
+      console.log('Fetched Groups : ', fetchedGroups.groups);
       setIsLoading(false);
     } catch (error) {
       console.error('Error fetching chat groups:', error);
       setIsLoading(false);
     }
   };
+  
+  
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
@@ -201,47 +218,57 @@ export default function Dashboard() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if ((messageInput.trim() || selectedFile) && selectedUser && socket && authState.user) {
-      let base64Image: string | null = null;
-
-      if (selectedFile) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          base64Image = reader.result?.toString().split(',')[1] || null;
-          const newMessage = {
-            senderId: authState.user.userId,
-            receiverId: selectedUser.id,
-            content: messageInput.trim(),
-            image: base64Image,
-            createdAt: new Date().toISOString(),
-            msgType:"Notgroups",
-            chatId:chatId
-          };
-
-          socket.emit('sendMessage', newMessage);
-          console.log('NEW MESSAGE: ', newMessage);
-          setMessages((prevMessages: any) => [...prevMessages, newMessage]);
-          setMessageInput('');
-          setSelectedFile(null);
-        };
-        reader.readAsDataURL(selectedFile);
-      } else {
-        const newMessage = {
-          senderId: authState.user.userId,
-          receiverId: selectedUser.id,
-          content: messageInput.trim(),
-          image: base64Image,
-          createdAt: new Date().toISOString(),   
-          msgType:"Notgroups",
-          chatId:chatId
-        };
-
-        socket.emit('sendMessage', newMessage);
-
-        setMessages((prevMessages: any) => [...prevMessages, newMessage]);
-        setMessageInput('');
-      }
+  
+    if (!(messageInput.trim() || selectedFile) || !selectedUser || !socket || !authState.user) {
+      return;
+    }
+  
+    const createMessage = (overrides: Record<string, any> = {}) => ({
+      senderId: authState.user.userId,
+      content: messageInput.trim(),
+      image: null,
+      createdAt: new Date().toISOString(),
+      ...overrides,
+    });
+  
+    const sendMessage = (newMessage: any) => {
+      socket.emit('sendMessage', newMessage);
+      setMessages((prevMessages: any) => [...prevMessages, newMessage]);
+      setMessageInput('');
+      setSelectedFile(null);
+    };
+  
+    const handleGroupMessage = (base64Image: string | null) => {
+      const newMessage = createMessage({
+        image: base64Image,
+        msgType: "Group",
+        chatId: selectedGroup?.id,
+        participants: selectedGroup?.participants,
+      });
+      console.log('For Group Message!', newMessage);
+      sendMessage(newMessage);
+    };
+  
+    const handleOneOnOneMessage = (base64Image: string | null) => {
+      const newMessage = createMessage({
+        image: base64Image,
+        msgType: "Notgroups",
+        chatId: chatId,
+        receiverId: selectedUser.id,
+      });
+      console.log('For One-on-One Message!', newMessage);
+      sendMessage(newMessage);
+    };
+  
+    if (selectedFile) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64Image = reader.result?.toString().split(',')[1] || null;
+        groups.length > 0 ? handleGroupMessage(base64Image) : handleOneOnOneMessage(base64Image);
+      };
+      reader.readAsDataURL(selectedFile);
+    } else {
+      groups.length > 0 ? handleGroupMessage(null) : handleOneOnOneMessage(null);
     }
   };
 
@@ -296,24 +323,33 @@ export default function Dashboard() {
 
   // Selecting messages for group
   // Fetch Group Chat
+  useEffect(()=>{
+    // Changing Chat Id
+    if(selectedGroup){
+      setChatId(selectedGroup.id);
+    }
+      console.log('Selected Group Chat Updated : ',selectedGroup)
+  },[selectedGroup])
   const fetchGroupChat = async (chatId: number) => {
     try {
       const chatData = await getChatById(chatId);
 
       if (chatData && chatData.participants && chatData.messages) {
-        console.log('Fetched group chat data:', chatData);
+        setSelectedGroup(chatData);
+        console.log('Fetched group chat data:', selectedGroup, ' CHat Data ', chatData);
         
-        // Assuming chatData.participants is an array of participant objects
-        const participantsList = chatData.participants.map((participant: any) => participant.name).join(', ');
 
-        console.log('Participants:', participantsList);
+        // Collecting Participants 
+        // const currparticipantsList = chatData.participants.map((participant: any) => participant.name).join(', ');
 
-        // Displaying messages
-        chatData.messages.forEach((message: any) => {
-          if (message.image) {
-            console.log('Group Chat Image:', message.image);
-          }
-        });
+        // console.log('Participants:', currparticipantsList);
+
+        // Displaying messages - Test
+        // chatData.messages.forEach((message: any) => {
+        //   if (message.image) {
+        //     console.log('Group Chat Image:', message.image);
+        //   }
+        // });
 
         setMessages(chatData.messages);
       } else {
@@ -446,7 +482,12 @@ export default function Dashboard() {
             Create Group
           </Button>
         </div>
-        <ScrollArea className="flex-grow h-screen">
+        <ScrollArea className="flex-grow h-[50%]  relative">
+          <div className='absolute w-full h-[15 %] bottom-0 ' 
+          style={{
+                  background: "linear-gradient(to bottom,rgba(31, 41, 55, 0), rgb(3 7 18))",
+                }}
+          ></div>
           {activeTab === 'single' ? (
             filteredUsers.map((user) => (
               <div
