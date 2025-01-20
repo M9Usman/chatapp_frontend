@@ -53,6 +53,10 @@ src/
 - Start new conversations by clicking on users
 - Real-time messaging capabilities
 - Secure logout functionality
+- **Group Chat:** Added group chat functionality in the dashboard screen. Users can toggle between one-to-one chat and group chat using a button.
+  - **One-to-One Chat:** Search users by name, send messages (text, emojis, or photos). Emoji support is implemented using `emoji-emitter`.
+  - **Group Chat:** Create and delete groups, chat within groups, share photos, or send emojis.
+  - Includes loading animations for chats and typing indicators for a seamless user experience.
 
 ### 4. Test Environment
 - TestChat page for gateway connection testing
@@ -83,6 +87,8 @@ The page auto-updates as you edit `app/page.tsx`.
    - Access Dashboard
    - Initiate conversations
    - Test real-time messaging
+   - Test one-to-one chat, emoji support, and photo sharing
+   - Test group chat functionalities (creating, deleting, chatting)
    - Verify session management
 
 ## Deployment
