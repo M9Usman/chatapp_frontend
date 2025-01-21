@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Picker from "@emoji-mart/react"
 import emojiData from "@emoji-mart/data"
 import { CreateGroupPopup } from "../../components/CreateGroupPopup"
-import { getChatbotResponse } from "@/service/chatbot"
+import { getChatbotResponse, getSuggestedMessage } from "@/service/openai"
 
 type User = {
   id: number
@@ -510,7 +510,7 @@ export default function Dashboard() {
   const suggestMessageAi = async (message: any) => {
     const userMessage = 'Give me a Suggested Message for and make sure to reply as a person : '+message.content; // Extract the content of the incoming message
     try {
-      const suggestedResponse = await getChatbotResponse(userMessage, authState.token); 
+      const suggestedResponse = await getSuggestedMessage(userMessage, authState.token); 
       const message = suggestedResponse.content;
       console.log('SuggestionMessage Set MSG : ',message);
       setChatSuggestionMessage(message);
@@ -800,12 +800,12 @@ export default function Dashboard() {
             )}
             {/* if suggested message show a Message block with icon of bot with title suggested message: */}
             {chatSuggestionMessage && (
-              <div className="flex flex-col gap-3 space-x-2 p-4 bg-black  transition rounded-lg shadow-md justify-starts items-start">
+              <div className="flex flex-col gap-3 space-x-2 p-4 bg-[#111111]  transition rounded-lg shadow-md justify-starts items-start">
                 <div className="flex  flex-col gap-2 w-full">
                   <div className="flex flex-row justify-between">
                     <p className="text-sm font-semibold"> <Bot className="h-6 w-6 text-blue-500" />
                       Suggested Message:</p>
-                    <Button className="hover:bg-red-500" onClick={()=>{setChatSuggestionMessage(null)}}>CLOSE</Button>
+                    <Button className="hover:bg-red-500 bg-white text-black" onClick={()=>{setChatSuggestionMessage(null)}}>CLOSE</Button>
                   </div>
                   <p className="text-gray-200 p-3 border rounded-md border-white">{chatSuggestionMessage}</p>
                 </div>
@@ -869,7 +869,7 @@ export default function Dashboard() {
 
       {/* Chatbot Interface */}
       {isChatbotOpen && (
-        <div className="fixed top-16 right-4 w-80 h-96 bg-[#212121] rounded-lg shadow-lg flex flex-col">
+        <div className="fixed top-16 right-4 w-80 h-96 bg-[#21212187] backdrop-blur-md rounded-lg shadow-lg flex flex-col">
           <div className="p-4 border-b border-gray-200 flex justify-between items-center">
             <h3 className="font-semibold">Chatbot</h3>
             <Button variant="ghost" size="icon" onClick={() => setIsChatbotOpen(false)}>
